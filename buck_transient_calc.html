@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buck Transient Calculator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F5F5F3; color: #1A1A1A; min-height: 100vh; }
+  header { background: #1A1A1A; color: #fff; padding: 16px 28px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 17px; font-weight: 500; letter-spacing: 0.01em; }
+  header span { font-size: 12px; color: #888; margin-left: auto; }
+  .main { display: grid; grid-template-columns: 260px 1fr; gap: 16px; padding: 16px; max-width: 1280px; margin: 0 auto; }
+  .panel { background: #fff; border: 0.5px solid #E0E0DC; border-radius: 12px; padding: 20px; }
+  .section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: #888; text-transform: uppercase; margin-bottom: 12px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: #555; margin-bottom: 5px; }
+  .field input[type=number] { width: 100%; padding: 7px 10px; border: 0.5px solid #DDD; border-radius: 7px; font-size: 13px; background: #FAFAFA; color: #1A1A1A; outline: none; transition: border-color 0.15s; }
+  .field input[type=number]:focus { border-color: #2878C8; background: #fff; }
+  .radio-group { display: flex; gap: 8px; margin-bottom: 16px; }
+  .radio-btn { flex: 1; padding: 8px; border: 0.5px solid #DDD; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; text-align: center; background: #FAFAFA; color: #555; transition: all 0.15s; user-select: none; }
+  .radio-btn.active-std { border-color: #2878C8; background: #EBF3FC; color: #0C447C; }
+  .radio-btn.active-tlvr { border-color: #1D9E75; background: #E1F5EE; color: #085041; }
+  .tlvr-fields { padding: 12px; background: #F0FBF6; border: 0.5px solid #9FE1CB; border-radius: 8px; margin-bottom: 14px; }
+  .tlvr-fields .section-label { color: #0F6E56; }
+  .tlvr-fields input { background: #fff; }
+  .overlay-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: #555; padding: 8px 0; user-select: none; }
+  .overlay-toggle input { width: 15px; height: 15px; accent-color: #2878C8; cursor: pointer; }
+  .divider { border: none; border-top: 0.5px solid #EBEBEB; margin: 16px 0; }
+  .result-box { background: #F8F8F6; border: 0.5px solid #E8E8E4; border-radius: 8px; padding: 14px; font-family: 'Courier New', monospace; font-size: 11.5px; line-height: 1.8; color: #222; }
+  .result-box .r-label { color: #888; }
+  .result-box .r-std { color: #2878C8; font-weight: 600; }
+  .result-box .r-tlvr { color: #1D9E75; font-weight: 600; }
+  .result-box .r-improve { color: #1D9E75; }
+  .result-box .r-warn { color: #C07010; }
+  .result-box .r-head { font-weight: 700; font-size: 10px; letter-spacing: 0.06em; color: #555; }
+  .chart-area { background: #fff; border: 0.5px solid #E0E0DC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .chart-title { font-size: 13px; font-weight: 500; color: #333; }
+  .chart-wrap { position: relative; width: 100%; }
+  .legend { display: flex; gap: 20px; font-size: 11px; color: #666; align-items: center; }
+  .legend-dot { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
+  .legend-dot.dashed { background: repeating-linear-gradient(90deg, #1D9E75 0, #1D9E75 5px, transparent 5px, transparent 9px); }
+  .metric-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .metric { background: #F5F5F3; border-radius: 8px; padding: 12px; }
+  .metric-lbl { font-size: 10px; color: #888; margin-bottom: 4px; }
+  .metric-val { font-size: 19px; font-weight: 500; }
+  .metric-sub { font-size: 10px; color: #aaa; margin-top: 2px; }
+  .std-val { color: #2878C8; }
+  .tlvr-val { color: #1D9E75; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Buck Transient Calculator</h1>
+  <span>Standard &amp; TLVR Inductor Analysis</span>
+</header>
+
+<div class="main">
+  <div class="panel">
+    <div class="section-label">Input Parameters</div>
+
+    <div class="field"><label>Vin (V)</label><input type="number" id="vin" value="12" step="0.1" min="0.1"></div>
+    <div class="field"><label>Vout (V)</label><input type="number" id="vout" value="1" step="0.01" min="0.01"></div>
+    <div class="field"><label>Imin (A)</label><input type="number" id="imin" value="50" step="1" min="0"></div>
+    <div class="field"><label>Imax (A)</label><input type="number" id="imax" value="250" step="1" min="1"></div>
+    <div class="field"><label>L (nH)</label><input type="number" id="lval" value="100" step="1" min="1"></div>
+
+    <hr class="divider">
+    <div class="section-label">Inductor Type</div>
+    <div class="radio-group">
+      <div class="radio-btn active-std" id="btn-std" onclick="setMode('standard')">Standard</div>
+      <div class="radio-btn" id="btn-tlvr" onclick="setMode('tlvr')">TLVR</div>
+    </div>
+
+    <div class="tlvr-fields" id="tlvr-fields">
+      <div class="section-label">TLVR Parameters</div>
+      <div class="field"><label>k — coupling factor (M = k × L)</label><input type="number" id="kval" value="0.5" step="0.01" min="0.01" max="0.99"></div>
+      <div class="field"><label>Phases N</label><input type="number" id="nphase" value="2" step="1" min="2" max="8"></div>
+    </div>
+
+    <label class="overlay-toggle">
+      <input type="checkbox" id="overlay-chk" onchange="update()">
+      Show both curves (overlay)
+    </label>
+
+    <hr class="divider">
+    <div class="section-label">Results</div>
+    <div class="result-box" id="result-box"></div>
+  </div>
+
+  <div class="chart-area">
+    <div class="metric-row" id="metric-row"></div>
+
+    <hr class="divider" style="margin:4px 0;">
+
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div class="chart-title">Inductor Current — Transient</div>
+        <div class="legend" id="legend-I"></div>
+      </div>
+      <div class="chart-wrap" style="height:260px;"><canvas id="chartI" role="img" aria-label="Inductor current transient waveform">Inductor current transient waveform.</canvas></div>
+    </div>
+
+    <hr class="divider" style="margin:4px 0;">
+
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div class="chart-title">Inductor Voltage — VL</div>
+        <div class="legend" id="legend-VL"></div>
+      </div>
+      <div class="chart-wrap" style="height:180px;"><canvas id="chartVL" role="img" aria-label="Inductor voltage VL waveform">Inductor voltage VL waveform.</canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let mode = 'standard';
+let chartI = null, chartVL = null;
+
+function getP() {
+  return {
+    vin:  parseFloat(document.getElementById('vin').value)  || 12,
+    vout: parseFloat(document.getElementById('vout').value) || 1,
+    imin: parseFloat(document.getElementById('imin').value) || 50,
+    imax: parseFloat(document.getElementById('imax').value) || 250,
+    L:    parseFloat(document.getElementById('lval').value) || 100,
+    k:    Math.min(0.99, Math.max(0.01, parseFloat(document.getElementById('kval').value) || 0.5)),
+    N:    Math.max(2, parseInt(document.getElementById('nphase').value) || 2),
+    overlay: document.getElementById('overlay-chk').checked,
+  };
+}
+
+function calcStd(p) {
+  const dI = p.imax - p.imin, L = p.L * 1e-9;
+  const vOn = p.vin - p.vout, vOff = p.vout;
+  return { vOn, vOff, tRise: L*dI/vOn*1e6, tFall: L*dI/vOff*1e6, Leff: p.L, M: 0 };
+}
+
+function calcTLVR(p) {
+  const dI = p.imax - p.imin, M = p.k * p.L;
+  const Leff = Math.max(p.L - M, 0.1), L = Leff * 1e-9;
+  const vOn = p.vin - p.vout, vOff = p.vout;
+  return { vOn, vOff, tRise: L*dI/vOn*1e6, tFall: L*dI/vOff*1e6, Leff, M };
+}
+
+function makeWave(p, res, pts=600) {
+  const dI = p.imax - p.imin, tr = res.tRise, tf = res.tFall, pre = tr * 0.4;
+  const total = pre + tr + tf + tf * 0.4;
+  const t = [], I = [], vl = [];
+  for (let i = 0; i < pts; i++) {
+    const ti = (i / (pts-1)) * total;
+    t.push(+ti.toFixed(4));
+    let iv, vlv;
+    if (ti < pre)            { iv = p.imin;                         vlv = 0; }
+    else if (ti < pre+tr)    { iv = p.imin + dI*(ti-pre)/tr;        vlv = res.vOn; }
+    else if (ti < pre+tr+tf) { iv = p.imax - dI*(ti-pre-tr)/tf;     vlv = -res.vOff; }
+    else                     { iv = p.imin;                         vlv = 0; }
+    I.push(+Math.min(p.imax, Math.max(p.imin, iv)).toFixed(3));
+    vl.push(+vlv.toFixed(4));
+  }
+  return { t, I, vl };
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-std').className  = 'radio-btn' + (m==='standard' ? ' active-std' : '');
+  document.getElementById('btn-tlvr').className = 'radio-btn' + (m==='tlvr'     ? ' active-tlvr' : '');
+  document.getElementById('tlvr-fields').style.opacity = m === 'tlvr' ? '1' : '0.45';
+  update();
+}
+
+function buildLegend(id, items) {
+  document.getElementById(id).innerHTML = items.map(it =>
+    `<span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:22px;height:3px;background:${it.color};${it.dash?'background:repeating-linear-gradient(90deg,'+it.color+' 0,'+it.color+' 5px,transparent 5px,transparent 9px)':''};border-radius:2px;display:inline-block;"></span>
+      <span>${it.label}</span>
+    </span>`
+  ).join('');
+}
+
+function update() {
+  const p = getP();
+  const std  = calcStd(p);
+  const tlvr = calcTLVR(p);
+  const res  = mode === 'tlvr' ? tlvr : std;
+  const clr  = mode === 'tlvr' ? '#1D9E75' : '#2878C8';
+  const lbl  = mode === 'tlvr' ? 'TLVR' : 'Standard';
+  const clr2 = mode === 'tlvr' ? '#2878C8' : '#1D9E75';
+  const lbl2 = mode === 'tlvr' ? 'Standard' : 'TLVR';
+  const res2 = mode === 'tlvr' ? std : tlvr;
+
+  const w1 = makeWave(p, res);
+  const w2 = makeWave(p, res2);
+
+  const irPct = ((std.tRise - tlvr.tRise) / std.tRise * 100).toFixed(1);
+  const ifPct = ((std.tFall - tlvr.tFall) / std.tFall * 100).toFixed(1);
+
+  document.getElementById('metric-row').innerHTML = [
+    { lbl: 'VL on', std: std.vOn.toFixed(2)+' V',   tlvr: tlvr.vOn.toFixed(2)+' V' },
+    { lbl: 'VL off', std: std.vOff.toFixed(2)+' V', tlvr: tlvr.vOff.toFixed(2)+' V' },
+    { lbl: 't_rise', std: std.tRise.toFixed(3)+' µs', tlvr: tlvr.tRise.toFixed(3)+' µs', improve: irPct+'%' },
+    { lbl: 't_fall', std: std.tFall.toFixed(3)+' µs', tlvr: tlvr.tFall.toFixed(3)+' µs', improve: ifPct+'%' },
+  ].map(m => `
+    <div class="metric">
+      <div class="metric-lbl">${m.lbl}</div>
+      <div class="metric-val std-val">${m.std}</div>
+      <div class="metric-val tlvr-val">${m.tlvr}</div>
+      ${m.improve ? `<div class="metric-sub">TLVR ${parseFloat(m.improve)>0?'↓':'↑'} ${Math.abs(parseFloat(m.improve)).toFixed(1)}%</div>` : ''}
+    </div>`).join('');
+
+  document.getElementById('result-box').innerHTML = `
+<span class="r-head">STANDARD</span>
+<br><span class="r-label">  VL on   </span><span class="r-std">${std.vOn.toFixed(3)} V</span>
+<br><span class="r-label">  VL off  </span><span class="r-std">${std.vOff.toFixed(3)} V</span>
+<br><span class="r-label">  t_rise  </span><span class="r-std">${std.tRise.toFixed(4)} µs</span>
+<br><span class="r-label">  t_fall  </span><span class="r-std">${std.tFall.toFixed(4)} µs</span>
+<br><br><span class="r-head">TLVR  k=${p.k.toFixed(2)}  N=${p.N}</span>
+<br><span class="r-label">  M       </span><span class="r-tlvr">${tlvr.M.toFixed(1)} nH</span>
+<br><span class="r-label">  L_eff   </span><span class="r-tlvr">${tlvr.Leff.toFixed(1)} nH</span>
+<br><span class="r-label">  t_rise  </span><span class="r-tlvr">${tlvr.tRise.toFixed(4)} µs</span>
+<br><span class="r-label">  t_fall  </span><span class="r-tlvr">${tlvr.tFall.toFixed(4)} µs</span>
+<br><br><span class="r-head">IMPROVEMENT</span>
+<br><span class="r-label">  t_rise  </span><span class="${parseFloat(irPct)>0?'r-improve':'r-warn'}">${parseFloat(irPct)>0?'↓':''} ${irPct}%</span>
+<br><span class="r-label">  t_fall  </span><span class="${parseFloat(ifPct)>0?'r-improve':'r-warn'}">${parseFloat(ifPct)>0?'↓':''} ${ifPct}%</span>
+`;
+
+  const legendItems = [{ label: lbl, color: clr }];
+  if (p.overlay) legendItems.push({ label: lbl2, color: clr2, dash: true });
+  buildLegend('legend-I',  legendItems);
+  buildLegend('legend-VL', legendItems);
+
+  const pre = res.tRise * 0.4;
+  const midI = (p.imin + p.imax) / 2;
+
+  const dsI = [{
+    label: lbl, data: w1.t.map((t,i) => ({x:t, y:w1.I[i]})),
+    borderColor: clr, borderWidth: 2.2, pointRadius: 0, tension: 0.05,
+    fill: { target: 'origin', above: clr+'14', below: 'transparent' },
+  }];
+  if (p.overlay) dsI.unshift({
+    label: lbl2, data: w2.t.map((t,i) => ({x:t, y:w2.I[i]})),
+    borderColor: clr2, borderWidth: 1.5, borderDash: [5,4],
+    pointRadius: 0, tension: 0.05,
+  });
+
+  const dsVL = [{
+    label: lbl, data: w1.t.map((t,i) => ({x:t, y:w1.vl[i]})),
+    borderColor: clr, borderWidth: 2.2, pointRadius: 0, tension: 0.05,
+    fill: false,
+  }];
+  if (p.overlay) dsVL.unshift({
+    label: lbl2, data: w2.t.map((t,i) => ({x:t, y:w2.vl[i]})),
+    borderColor: clr2, borderWidth: 1.5, borderDash: [5,4],
+    pointRadius: 0, tension: 0.05,
+  });
+
+  const gridColor = 'rgba(0,0,0,0.05)';
+  const tickColor = '#999';
+  const baseOpts = {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false,
+      callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(3)}` }
+    }},
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'Time (µs)', color: tickColor, font: {size:11} },
+           ticks: { color: tickColor, font:{size:10}, maxTicksLimit: 10 },
+           grid: { color: gridColor } },
+    }
+  };
+
+  if (chartI) chartI.destroy();
+  chartI = new Chart(document.getElementById('chartI'), {
+    type: 'line', data: { datasets: dsI },
+    options: { ...JSON.parse(JSON.stringify(baseOpts)),
+      plugins: { ...baseOpts.plugins,
+        annotation: {},
+        tooltip: baseOpts.plugins.tooltip,
+      },
+      scales: { ...baseOpts.scales,
+        y: { title: { display: true, text: 'Current (A)', color: tickColor, font:{size:11} },
+             ticks: { color: tickColor, font:{size:10} }, grid: { color: gridColor } }
+      }
+    }
+  });
+
+  if (chartVL) chartVL.destroy();
+  chartVL = new Chart(document.getElementById('chartVL'), {
+    type: 'line', data: { datasets: dsVL },
+    options: { ...JSON.parse(JSON.stringify(baseOpts)),
+      scales: { ...baseOpts.scales,
+        y: { title: { display: true, text: 'VL (V)', color: tickColor, font:{size:11} },
+             ticks: { color: tickColor, font:{size:10} }, grid: { color: gridColor } }
+      }
+    }
+  });
+}
+
+document.querySelectorAll('input[type=number]').forEach(el => el.addEventListener('input', update));
+document.getElementById('tlvr-fields').style.opacity = '0.45';
+update();
+</script>
+</body>
+</html>
